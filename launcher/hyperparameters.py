@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 
+seed_random = np.random.RandomState(2023)
 
 def set_hyperparameters(
     hyperparameter: dict,
@@ -18,7 +19,7 @@ def set_hyperparameters(
                     group_name += str(variant[key]) + '_'
 
                 variant['group'] = group_name
-                variant['seed'] = np.random.randint(999999)
+                variant['seed'] = seed_random.randint(999999)
             
 
         return variants
