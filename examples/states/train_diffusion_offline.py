@@ -1,16 +1,17 @@
 import gym
 import jax
-import wandb
 from tqdm import tqdm
 from flax.core import frozen_dict
 from jaxrl5.agents import BCLearner, IQLLearner, DDPMIQLLearner
 from jaxrl5.data.d4rl_datasets import D4RLDataset
 from jaxrl5.evaluation import evaluate, implicit_evaluate
 from jaxrl5.wrappers import wrap_gym
-from jaxrl5.wrappers.wandb_video import WANDBVideo
 from jaxrl5.data import ReplayBuffer, BinaryDataset
 import jax.numpy as jnp
 import numpy as np
+from torch.utils.tensorboard import SummaryWriter
+import datetime
+import json
 
 @jax.jit
 def merge_batch(batch1, batch2):
@@ -21,8 +22,18 @@ def merge_batch(batch1, batch2):
     return frozen_dict.freeze(merge)
 
 def call_main(details):
-    wandb.init(project=details['project'], name=details['group'])
-    wandb.config.update(details)
+    dir_name = f'./logs/{details["project"]}_{details["group"]}_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}'
+    writer = SummaryWriter(log_dir=dir_name)
+    
+    # Serialize 'details' to a JSON string
+    details_json = json.dumps(details, indent=4)
+
+    # Define the file name, using a timestamp for uniqueness
+    file_name = f'{dir_name}/details.json'
+
+    # Write the JSON string to a file
+    with open(file_name, 'w') as file:
+        file.write(details_json)
 
     env = gym.make(details['env_name'])
 
@@ -32,9 +43,7 @@ def call_main(details):
         ds = D4RLDataset(env)
 
     env = wrap_gym(env)
-    if details['save_video']:
-        env = WANDBVideo(env)
-
+    
     if details['take_top'] is not None or details['filter_threshold'] is not None:
         ds.filter(take_top=details['take_top'], threshold=details['filter_threshold'])
 
@@ -84,8 +93,10 @@ def call_main(details):
         if i % details['log_interval'] == 0:
             val_sample = ds_val.sample(details['batch_size'], keys=keys)
             agent, val_info = agent.eval_loss(val_sample)
-            wandb.log({f"train/{k}": v for k, v in info.items()}, step=i)
-            wandb.log({f"val/{k}": v for k, v in val_info.items()}, step=i)
+            for k, v in info.items():
+                writer.add_scalar(f"train/{k}", np.asarray(v), i)
+            for k, v in val_info.items():
+                writer.add_scalar(f"val/{k}", np.asarray(v), i)
         
         if i % details['eval_interval'] == 0 and i > 0:
             for inference_params in details['inference_variants']:
@@ -95,14 +106,15 @@ def call_main(details):
                 )
                 if 'binary' not in details['env_name']:
                     eval_info["return"] = env.get_normalized_score(eval_info["return"]) * 100.0
-                wandb.log({f"eval/{inference_params}_{k}": v for k, v in eval_info.items()}, step=i)
-            
+                for k, v in eval_info.items():
+                    writer.add_scalar(f"eval/{inference_params}_{k}", np.asarray(v), i)        
             agent.replace(**details['training_time_inference_params'])
             
             eval_info = implicit_evaluate(agent, env, details['eval_episodes'], save_video=details['save_video'])
             if 'binary' not in details['env_name']:
                 eval_info["return"] = env.get_normalized_score(eval_info["return"]) * 100.0
-            wandb.log({f"eval/implicit_{k}": v for k, v in eval_info.items()}, step=i)
+            for k, v in eval_info.items():
+                    writer.add_scalar(f"eval/implicit_{k}", np.asarray(v), i)  
             
             
     
@@ -159,7 +171,8 @@ def call_main(details):
 
                 if i % details['log_interval'] == 0:
                     info = jax.device_get(info)
-                    wandb.log({f'online_train/{k}': v for k, v in info.items()}, step= i + details['max_steps'])
+                    for k, v in info.items():
+                        writer.add_scalar(f'online_train/{k}', np.asarray(v), i + details['max_steps'])
 
                 if i % details['online_eval_interval'] == 0:
                     for inference_params in details['inference_variants']:
@@ -169,7 +182,8 @@ def call_main(details):
                         )
                         if 'binary' not in details['env_name']:
                             eval_info["return"] = env.get_normalized_score(eval_info["return"]) * 100.0
-                        wandb.log({f"online_eval/{inference_params}_{k}": v for k, v in eval_info.items()}, step=i + details['max_steps'])
+                        for k, v in eval_info.items():
+                            writer.add_scalar(f"online_eval/{inference_params}_{k}", np.asarray(v), i + details['max_steps'])
                     
                     agent.replace(**details['training_time_inference_params'])
 
