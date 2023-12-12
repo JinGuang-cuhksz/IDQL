@@ -1,4 +1,8 @@
 import os
+import sys
+from os import path
+
+sys.path.append(path.dirname(path.dirname(path.dirname(path.abspath(__file__)))))
 
 import numpy as np
 from absl import app, flags
@@ -14,7 +18,7 @@ flags.DEFINE_integer('variant', 0, 'Logging interval.')
 def main(_):
     constant_parameters = dict(project='offline_schedule_final',
                                experiment_name='ddpm_iql',
-                               max_steps=1500001, #Actor takes two steps per critic step
+                               max_steps=3000001, #Actor takes two steps per critic step
                                batch_size=2048, #Actor batch size x 2 (so really 1024), critic is fixed to 256
                                eval_episodes=50,
                                log_interval=1000,
@@ -75,8 +79,8 @@ def main(_):
 
     filtered_variants = []
     for variant in variants:
-        variant['rl_config']['T'] = variant['T']
-        variant['rl_config']['beta_schedule'] = variant['beta_schedule']
+        # variant['rl_config']['T'] = variant['T']
+        # variant['rl_config']['beta_schedule'] = variant['beta_schedule']
         variant['inference_variants'] = inference_variants
             
         if 'antmaze' in variant['env_name']:
@@ -89,6 +93,7 @@ def main(_):
     print(len(filtered_variants))
     variant = filtered_variants[FLAGS.variant]
     print(FLAGS.variant)
+    print(variant)
     call_main(variant)
 
 
